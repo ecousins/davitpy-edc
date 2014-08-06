@@ -50,9 +50,10 @@ class mapObj(basemap.Basemap):
 
   def __init__(self, datetime=None, coords='geo', 
     projection='stere', resolution='c', dateTime=None, 
-    lat_0=None, lon_0=None, boundinglat=None, width=None, height=None, 
+    lat_0=None, lon_0=None, boundinglat=None, width=None, height=None, draw=True, 
     fillContinents='.8', fillOceans='None', fillLakes=None, coastLineWidth=0., 
-    grid=True, gridLabels=True, showCoords=True, **kwargs):
+    coastLineColor=None, grid=True, gridLabels=True, showCoords=True, 
+    **kwargs):
     """Create empty map 
     
     **Args**:    
@@ -60,6 +61,7 @@ class mapObj(basemap.Basemap):
       * **[lon_0]**: center meridian (default is -70E)    
       * **[lat_0]**: center latitude (default is -90E)
       * **[boundingLat]**: bounding latitude (default it +/-20)    
+      * **[draw]**: set to "False" to skip initial drawing of map
       * **[grid]**: show/hide parallels and meridians grid    
       * **[fill_continents]**: continent color. Default is 'grey'    
       * **[fill_water]**: water color. Default is 'None'    
@@ -77,12 +79,19 @@ class mapObj(basemap.Basemap):
     written by Sebastien, 2013-02
     """
     from models import aacgm
-    import numpy as np
-    from pylab import text
     import math
     from copy import deepcopy
     import datetime as dt
-
+    self.lat_0=lat_0
+    self.lon_0=lon_0
+    self._coastLineWidth=coastLineWidth
+    self._coastLineColor=coastLineColor
+    self._fillContinents=fillContinents
+    self._fillOceans=fillOceans
+    self._fillLakes=fillLakes
+    self._showCoords=showCoords
+    self._grid=grid
+    self._gridLabels=gridLabels
     self._coordsDict = {'mag': 'AACGM',
               'geo': 'Geographic',
               'mlt': 'MLT'}
@@ -92,6 +101,7 @@ class mapObj(basemap.Basemap):
       return
 
     if datetime is None:
+      print "Warning, datetime not specified, using current time."
       datetime = dt.datetime.utcnow()
     self.datetime = datetime
 
@@ -102,56 +112,61 @@ class mapObj(basemap.Basemap):
     self.coords = coords
 
     # Set map projection limits and center point depending on hemisphere selection
-    if lat_0 is None: 
-      lat_0 = 90.
-      if boundinglat: lat_0 = math.copysign(lat_0, boundinglat)
-    if lon_0 is None: 
-      lon_0 = -100.
+    if self.lat_0 is None: 
+      self.lat_0 = 90.
+      if boundinglat: self.lat_0 = math.copysign(self.lat_0, boundinglat)
+    if self.lon_0 is None: 
+      self.lon_0 = -100.
       if self.coords == 'mag': 
-        _, lon_0, _ = aacgm.aacgmConv(0., lon_0, 0., self.datetime.year, 0)
+        _, self.lon_0, _ = aacgm.aacgmConv(0., self.lon_0, 0., self.datetime.year, 0)
     if boundinglat:
-      width = height = 2*111e3*( abs(lat_0 - boundinglat) )
+      width = height = 2*111e3*( abs(self.lat_0 - boundinglat) )
 
-    # Initialize map
+    # Initialize map with original Basemap
     super(mapObj, self).__init__(projection=projection, resolution=resolution, 
-        lat_0=lat_0, lon_0=lon_0, width=width, height=height, **kwargs)
+        lat_0=self.lat_0, lon_0=self.lon_0, width=width, height=height, **kwargs)
 
-    # Add continents
-    if coords is not 'mlt' or dateTime is not None:
-      _ = self.drawcoastlines(linewidth=coastLineWidth)
-      # self.drawmapboundary(fill_color=fillOceans)
-      _ = self.fillcontinents(color=fillContinents, lake_color=fillLakes)
+    if draw:
+      self.draw()
 
-    # Add coordinate spec
-    if showCoords:
-      _ = text(self.urcrnrx, self.urcrnry, self._coordsDict[coords]+' coordinates', 
+  def draw(self):
+      import numpy as np
+      from pylab import text
+      # Add continents
+      _ = self.drawcoastlines(linewidth=self._coastLineWidth, color=self._coastLineColor)
+      _ = self.drawmapboundary(fill_color=self._fillOceans)
+      _ = self.fillcontinents(color=self._fillContinents, lake_color=self._fillLakes)
+
+      # Add coordinate spec
+      if self._showCoords:
+        _ = text(self.urcrnrx, self.urcrnry, self._coordsDict[self.coords]+' coordinates', 
           rotation=-90., va='top', fontsize=8)
 
-    # draw parallels and meridians.
-    if grid:
-      parallels = np.arange(-80.,81.,20.)
-      out = self.drawparallels(parallels, color='.6', zorder=10)
-      # label parallels on map
-      if gridLabels: 
-        lablon = int(self.llcrnrlon/10)*10
-        rotate_label = lablon - lon_0 if lat_0 >= 0 else lon_0 - lablon + 180.
-        x,y = basemap.Basemap.__call__(self, lablon*np.ones(parallels.shape), parallels)
-        for ix,iy,ip in zip(x,y,parallels):
-          if not self.xmin <= ix <= self.xmax: continue
-          if not self.ymin <= iy <= self.ymax: continue
-          _ = text(ix, iy, r"{:3.0f}$^\circ$".format(ip), 
+      # draw parallels and meridians.
+      if self._grid:
+        parallels = np.arange(-80.,81.,20.)
+        out = self.drawparallels(parallels, color='.6', zorder=10)
+        # label parallels on map
+        if self._gridLabels: 
+          lablon = int(self.llcrnrlon/10)*10
+          rotate_label = lablon - self.lon_0 if self.lat_0 >= 0 else self.lon_0 - lablon + 180.
+          x,y = basemap.Basemap.__call__(self, lablon*np.ones(parallels.shape), parallels)
+          for ix,iy,ip in zip(x,y,parallels):
+            if not self.xmin <= ix <= self.xmax: continue
+            if not self.ymin <= iy <= self.ymax: continue
+            _ = text(ix, iy, r"{:3.0f}$^\circ$".format(ip), 
               rotation=rotate_label, va='center', ha='center', zorder=10, color='.4')
-      # label meridians on bottom and left
-      meridians = np.arange(-180.,181.,20.)
-      if gridLabels: 
-        merLabels = [False,False,False,True]
-      else: 
-        merLabels = [False,False,False,False]
-      # draw meridians
-      out = self.drawmeridians(meridians, labels=merLabels, color='.6', zorder=10)
+        # label meridians on bottom and left
+        meridians = np.arange(-180.,181.,20.)
+        if self._gridLabels: 
+          merLabels = [False,False,False,True]
+        else: 
+          merLabels = [False,False,False,False]
+        # draw meridians
+        out = self.drawmeridians(meridians, labels=merLabels, color='.6', zorder=10)
 
   
-  def __call__(self, x, y, inverse=False, coords=None):
+  def __call__(self, x, y, inverse=False, coords=None,altitude=0.):
     from models import aacgm
     from copy import deepcopy
     import numpy as np
@@ -161,9 +176,14 @@ class mapObj(basemap.Basemap):
       print 'Invalid coordinate system given in coords ({}): setting "{}"'.format(coords, self.coords)
       coords = None
 
-    if coords and coords != self.coords:
+    #First do the conversion if we aren't changing between lat/lon coordinate systems
+    if (coords is None) or (coords is self.coords):
+      return basemap.Basemap.__call__(self, x, y, inverse=inverse)
+
+    #Next do the conversion if lat/lon coord system change first, then calculation of x,y map coords (inverse=False)
+    elif coords and (coords != self.coords) and (inverse is False):
       trans = coords+'-'+self.coords
-      if trans in ['geo-mag','mag-geo']:
+      if trans in ['geo-mag','mag-geo']: #Add 'geo-mlt', 'mlt-geo', for mlt support
         flag = 0 if trans == 'geo-mag' else 1
         try:
           nx, ny = len(x), len(y)
@@ -171,50 +191,35 @@ class mapObj(basemap.Basemap):
           yt = np.array(y)
           shape = xt.shape    
           y, x, _ = aacgm.aacgmConvArr(
-            list(yt.flatten()), list(xt.flatten()), [0.]*nx, 
+            list(yt.flatten()), list(xt.flatten()), [altitude]*nx, 
             self.datetime.year, flag)
           x = np.array(x).reshape(shape)
           y = np.array(y).reshape(shape)
         except TypeError as e:
-          y, x, _ = aacgm.aacgmConv(y, x, 0., 
+          y, x, _ = aacgm.aacgmConv(y, x, altitude, 
             self.datetime.year, flag)
+      return basemap.Basemap.__call__(self, x, y, inverse=False)
 
-
-    if self.coords is 'geo':
-      return basemap.Basemap.__call__(self, x, y, inverse=inverse)
-
-    elif self.coords is 'mag':
-      try:
-        callerFile, _, callerName = inspect.getouterframes(inspect.currentframe())[1][1:4]
-      except: 
-        return basemap.Basemap.__call__(self, x, y, inverse=inverse)
-      if isinstance(y, float) and abs(y) == 90.:
-        return basemap.Basemap.__call__(self, x, y, inverse=inverse)
-      if 'mpl_toolkits' in callerFile and callerName is '_readboundarydata':
-        if not inverse:
-          try:
-            nx, ny = len(x), len(y)
-            x = np.array(x)
-            y = np.array(y)
-            shape = x.shape
-            yout, xout, _ = aacgm.aacgmConvArr(
-              list(y.flatten()), list(x.flatten()), [0.]*nx, 
-              self.datetime.year, 0)
-            xout = np.array(xout).reshape(shape)
-            yout = np.array(yout).reshape(shape)
-          except TypeError:
-            yout, xout, _ = aacgm.aacgmConv(y, x, 0., 
-              self.datetime.year, 0)
-          return basemap.Basemap.__call__(self, xout, yout, inverse=inverse)
-        else:
-          return basemap.Basemap.__call__(self, x, y, inverse=inverse)
-      else:
-        return basemap.Basemap.__call__(self, x, y, inverse=inverse)
-
-    elif self.coords is 'mlt':
-      print 'Not implemented'
-      callerFile, _, callerName = inspect.getouterframes(inspect.currentframe())[1][1:4]
-
+    #Finally do the conversion if calculation of x,y map coords first, then lat/lon coord system change (inverse=True)
+    elif coords and (coords != self.coords) and (inverse is True):
+      x, y = basemap.Basemap.__call__(self, x, y, inverse=True)
+      trans = self.coords+'-'+coords
+      if trans in ['geo-mag','mag-geo']: #Add 'geo-mlt', 'mlt-geo', for mlt support
+        flag = 0 if trans == 'geo-mag' else 1
+        try:
+          nx, ny = len(x), len(y)
+          xt = np.array(x)
+          yt = np.array(y)
+          shape = xt.shape    
+          y, x, _ = aacgm.aacgmConvArr(
+            list(yt.flatten()), list(xt.flatten()), [altitude]*nx, 
+            self.datetime.year, flag)
+          x = np.array(x).reshape(shape)
+          y = np.array(y).reshape(shape)
+        except TypeError as e:
+          y, x, _ = aacgm.aacgmConv(y, x, altitude, 
+            self.datetime.year, flag)
+      return y, x
 
   def _readboundarydata(self, name, as_polygons=False):
     from models import aacgm
@@ -560,6 +565,7 @@ def addColorbar(mappable, ax):
 
 ################################################################################
 ################################################################################
+
 def textHighlighted(xy, text, color='k', fontsize=None, xytext=(0,0), 
   zorder=None, text_alignment=(0,0), xycoords='data', 
   textcoords='offset points', **kwargs):
@@ -602,3 +608,98 @@ def textHighlighted(xy, text, color='k', fontsize=None, xytext=(0,0),
 
     ab.set_zorder(zorder)
     ax.add_artist(ab)
+
+if __name__ == "__main__":
+  import pylab as plt
+  print "Simple tests for plotUtils"
+  coords='geo'
+  lat_0=20.
+  lon_0=150.
+  print "Setting up figure 1 and axis"
+  fig=plt.figure(1)
+  ax=None
+  print "Init a mapObj instance with draw==False"
+  tmpmap1 = mapObj(coords=coords,projection='stere', draw=False, 
+                         llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, urcrnrlat=40,
+                         lat_0=lat_0, lon_0=lon_0,resolution='l',ax=ax)
+  print "running plt.show to initilize plots, should have an empty figure 1 window\nClose figure window to continue with example"
+  plt.show()
+  print "call the draw method for tmpmap1"
+  tmpmap1.draw()
+  print "running plt.show to initilize plots, should have an figure 1 window with a map\nClose figure window to continue with example"
+  plt.show()
+  fig=plt.figure(2)
+  ax=None
+  print "Init a mapObj instance with draw==True"
+  tmpmap2 = mapObj(coords=coords,projection='stere', draw=True,
+                         llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, urcrnrlat=40,
+                         lat_0=lat_0, lon_0=lon_0,resolution='l')
+  print "running plt.show to initilize plots, should have an figure 2 window with a map\nClose figure window to continue with example"
+  plt.show()
+
+  print "\nTesting some coordinate transformations."
+  print "  Converting geo lat/lon to map x/y to geo lat/lon."
+  print "  geo lat/lon to map x/y"
+  map1 = mapObj(coords='geo',projection='stere',llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, \
+               urcrnrlat=40,lat_0=54,lon_0=-120,resolution='l',draw=False)
+  x,y = map1(-120,54)
+  print "    Expected: ",14898932.7446,-14364789.7586
+  print "    Received: ",x,y
+  print "  map x/y to geo lat/lon"
+  lon,lat = map1(x,y,inverse=True,coords='geo')
+  print "    Expected: ",-119.99999999999999, 54.000000000000014
+  print "    Received: ",lon,lat
+
+  print "\n  Converting mag lat/lon to map x/y to mag lat/lon."
+  print "  geo lat/lon to map x/y"
+  map1 = mapObj(coords='mag',projection='stere',llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, \
+               urcrnrlat=40,lat_0=54,lon_0=-120,resolution='l',draw=False)
+  x,y = map1(-120,54)
+  print "    Expected: ",14898932.7446,-14364789.7586
+  print "    Received: ",x,y
+  print "  map x/y to geo lat/lon"
+  lon,lat = map1(x,y,inverse=True,coords='mag')
+  print "    Expected: ",-119.99999999999999, 54.000000000000014
+  print "    Received: ",lon,lat
+
+  print "\n  Converting geo lat/lon to map x/y to mag lat/lon."
+  print "  geo lat/lon to map x/y"
+  map1 = mapObj(coords='geo',projection='stere',llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, \
+               urcrnrlat=40,lat_0=54,lon_0=-120,resolution='l',draw=False)
+  x,y = map1(-120,54)
+  print "    Expected: ",14898932.7446,-14364789.7586
+  print "    Received: ",x,y
+  print "  map x/y to mag lat/lon"
+  lon,lat = map1(x,y,inverse=True,coords='mag')
+  print "    Expected: ",59.9324622167,-59.9940107681
+  print "    Received: ",lon,lat
+
+  print "\n  Converting mag lat/lon to map x/y to geo lat/lon."
+  print "  mag lat/lon to map x/y"
+  map1 = mapObj(coords='mag',projection='stere',llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, \
+               urcrnrlat=40,lat_0=54,lon_0=-120,resolution='l',draw=False)
+  x,y = map1(-120,54)
+  print "    Expected: ",14898932.7446,-14364789.7586
+  print "    Received: ",x,y
+  print "  map x/y to geo lat/lon"
+  lon,lat = map1(x,y,inverse=True,coords='geo')
+  print "    Expected: ",58.8384430722,175.311901385
+  print "    Received: ",lon,lat
+
+  print "\n  Converting geo lat/lon from a mag map to map x/y."
+  print "  mag lat/lon to map x/y"
+  map1 = mapObj(coords='mag',projection='stere',llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, \
+               urcrnrlat=40,lat_0=54,lon_0=-120,resolution='l',draw=False)
+  x,y = map1(175.311901385,58.8384430722,coords='geo')
+  print "    Expected: ",14900062.142,-14366347.2577
+  print "    Received: ",x,y
+
+  print "\n  Converting mag lat/lon from a geo map to map x/y."
+  print "  mag lat/lon to map x/y"
+  map1 = mapObj(coords='geo',projection='stere',llcrnrlon=100, llcrnrlat=0, urcrnrlon=170, \
+               urcrnrlat=40,lat_0=54,lon_0=-120,resolution='l',draw=False)
+  x,y = map1(-59.9940107681,59.9324622167,coords='mag')
+  print "    Expected: ",14902099.9295,-14362212.9526
+  print "    Received: ",x,y
+
+  print "Tests concluded"
