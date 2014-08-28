@@ -14,3 +14,4 @@ This includes the following submodules(s):
 """
 
 import signal 
+import sam
