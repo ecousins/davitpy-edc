@@ -236,10 +236,12 @@ def readOmni(sTime,eTime=None,res=5,bx=None,bye=None,bze=None,bym=None,bzm=None,
 	#connect to the database
 	omniData = db.getDataConn(dbName='gme',collName='omni')
 	
-	#do the query
-	if(qryList != []): qry = omniData.find(qryDict)
-	else: qry = omniData.find()
-	if(qry.count() > 0):
+	if omniData != None:
+                #do the query
+		if(qryList != []): qry = omniData.find(qryDict)
+		else: qry = omniData.find()
+	
+	if(omniData != None and qry.count() > 0):
 		omniList = []
 		for rec in qry.sort('time'):
 			omniList.append(omniRec(dbDict=rec))
@@ -251,7 +253,7 @@ def readOmni(sTime,eTime=None,res=5,bx=None,bye=None,bze=None,bym=None,bzm=None,
 		print 'we will look on the ftp server, but your conditions will be (mostly) ignored'
 		
 		#read from ftp server
-		omniList = readOmniFtp(sTime, eTime)
+		omniList = readOmniFtp(sTime, eTime,res=res)
 		
 		if(omniList != None):
 			print '\nreturning a list with',len(omniList),'recs of omni data'
